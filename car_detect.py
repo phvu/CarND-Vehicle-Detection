@@ -123,6 +123,10 @@ def filter_candidates(img, candidates, cars, heat_threshold=1, max_smooth=10, mi
     labels = scipy_label(heat)
     bboxes = get_labeled_bboxes(labels)
 
+    # miss by default
+    for c in cars:
+        c.misses += 1
+
     # assign the bboxes to the cars
     for bbox in bboxes:
         if bbox_area(bbox) < min_area:
@@ -139,7 +143,8 @@ def filter_candidates(img, candidates, cars, heat_threshold=1, max_smooth=10, mi
                 cars.append(CarPosition(bbox, max_smooth=max_smooth))
 
     # remove cars that miss a frame
-    cars = [c for c in cars if c.misses == 0]
+    max_misses = 1
+    cars = [c for c in cars if c.misses < max_misses]
 
     # merge near-by car positions
     merged_cars = []
@@ -213,7 +218,7 @@ class CarPosition(object):
         """
         Update the car position with the new bbox
         """
-        self.misses = 0
+        self.misses -= 1
         new_bbox = np.array(bbox).ravel()
         self.bboxes = np.vstack((self.bboxes, new_bbox))
         if len(self.bboxes) > self.max_smooth:
@@ -301,12 +306,12 @@ class CarDetector(object):
         self.cars, car_img, heat_img = filter_candidates(img, candidates, self.cars,
                                                          self.heat_threshold, self.max_smooth, self.min_overlap,
                                                          self.min_area)
-        return car_img, heat_img, self.cars
+        return car_img, heat_img
 
     def detect_video(self, inp_file, out_file):
 
         def detect_func(frame):
-            car_img, heat_img, _ = self.detect(frame)
+            car_img, heat_img = self.detect(frame)
             if self.debug:
                 heat_img = (heat_img - heat_img.min()) / (heat_img.max() - heat_img.min())
                 heat_img = (heat_img * 255).astype(np.uint8)
