@@ -1,0 +1,4 @@
+moviepy
+scipy
+scikit-learn
+scikit-image

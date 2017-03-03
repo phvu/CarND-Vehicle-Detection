@@ -1,7 +1,6 @@
 import argparse
+import multiprocessing
 import os
-import pickle
-from multiprocessing import Pool
 
 import cv2
 import numpy as np
@@ -13,6 +12,7 @@ from car_detect_train import get_hog_features, bin_spatial, color_hist
 
 
 def find_cars(img, ystart, ystop, scale, ppl, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins):
+
     draw_img = np.copy(img)
     img = img.astype(np.float32) / 255
 
@@ -203,8 +203,24 @@ class CarDetectionModel(object):
         self.hist_bins = persisted_data['hist_bins']
 
 
+class CarFeatureDetector(multiprocessing.Process):
+    def __init__(self, work_queue, output_queue):
+        self.work_queue = work_queue
+        self.output_queue = output_queue
+        super(CarFeatureDetector, self).__init__()
+
+    def run(self):
+        detection_model = CarDetectionModel()
+        for request in iter(self.work_queue.get, None):
+            img, ystart, ystop, scale = request
+            c, _ = find_cars(img, ystart, ystop, scale, detection_model.ppl,
+                             detection_model.orient, detection_model.pix_per_cell, detection_model.cell_per_block,
+                             detection_model.spatial_size, detection_model.hist_bins)
+            self.output_queue.put(c)
+
+
 class CarDetector(object):
-    def __init__(self, debug=False):
+    def __init__(self, debug=False, workers=4):
         self.debug = debug
         self.detection_model = CarDetectionModel()
 
@@ -217,7 +233,10 @@ class CarDetector(object):
         self.min_overlap = 0.3
         self.min_area = 1000
 
-        self.pool = Pool(processes=4)
+        self.work_queue = multiprocessing.Queue()
+        self.output_queue = multiprocessing.Queue()
+        self.detectors = [CarFeatureDetector(self.work_queue, self.output_queue) for _ in range(workers)]
+        [d.start() for d in self.detectors]
 
     def get_candidates_serial(self, img):
         candidates = []
@@ -229,30 +248,20 @@ class CarDetector(object):
             candidates.extend(c)
         return candidates
 
-    @staticmethod
-    def _get_candidates_func(pkl):
-        data = pickle.loads(pkl)
-        detection_model = CarDetectionModel()
-        print('Gonna find cars scale {}'.format(data['scale']))
-        c, _ = find_cars(data['img'], data['ystart'], data['ystop'], data['scale'], detection_model.ppl,
-                         detection_model.orient, detection_model.pix_per_cell, detection_model.cell_per_block,
-                         detection_model.spatial_size, detection_model.hist_bins)
-        print('Done find cars scale {}'.format(data['scale']))
-        return c
-
     def get_candidates_parallel(self, img):
+        for scale in self.scales:
+            self.work_queue.put((img, self.ystart, self.ystop, scale))
 
-        def create_pkl(scale):
-            data = {'img': img, 'ystart': self.ystart, 'ystop': self.ystop, 'scale': scale}
-            return pickle.dumps(data)
-
-        all_candidates = self.pool.map(CarDetector._get_candidates_func, [create_pkl(_) for _ in self.scales])
-        return [i for si in all_candidates for i in si]
+        candidates = []
+        for _ in self.scales:
+            c = self.output_queue.get()
+            candidates.extend(c)
+        return candidates
 
     def detect(self, img):
         assert (len(img.shape) == 3 and img.shape[2] == 3 and img.dtype == np.uint8)
 
-        candidates = self.get_candidates_serial(img)
+        candidates = self.get_candidates_parallel(img)
         self.cars, car_img, heat_img = filter_candidates(img, candidates, self.cars,
                                                          self.heat_threshold, self.max_smooth, self.min_overlap,
                                                          self.min_area)
@@ -270,18 +279,26 @@ class CarDetector(object):
 
         out_clip = VideoFileClip(inp_file).fl_image(detect_func)
         out_clip.write_videofile(out_file, audio=False, verbose=False)
+
+        self.work_queue.put(None)
+        for p in self.detectors:
+            p.terminate()
+            p.join()
+
         return out_clip
 
 
 if __name__ == '__main__':
+    multiprocessing.set_start_method('spawn', force=True)
     parser = argparse.ArgumentParser(description='Detecting cars')
     parser.add_argument('input', type=str, help='Path to the input video')
     parser.add_argument('--out', '-o', dest='output', type=str, default='', help='Path to the output video')
     parser.add_argument('--debug', '-d', dest='debug', action='store_true')
+    parser.add_argument('--process', '-p', dest='process', type=int, default=4, help='Number of worker processes')
 
     args = parser.parse_args()
 
-    detector = CarDetector(debug=args.debug)
+    detector = CarDetector(debug=args.debug, workers=args.process)
     if args.output == '':
         args.output = '{}_detected{}'.format(*os.path.splitext(args.input))
     detector.detect_video(args.input, args.output)
