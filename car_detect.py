@@ -12,7 +12,9 @@ from car_detect_train import get_hog_features, bin_spatial, color_hist
 
 
 def find_cars(img, ystart, ystop, scale, ppl, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins):
-
+    """
+    Find all image patches that likely contain a car
+    """
     draw_img = np.copy(img)
     img = img.astype(np.float32) / 255
 
@@ -136,6 +138,21 @@ def filter_candidates(img, candidates, cars, heat_threshold=1, max_smooth=10, mi
             else:
                 cars.append(CarPosition(bbox, max_smooth=max_smooth))
 
+    # remove cars that miss a frame
+    cars = [c for c in cars if c.misses == 0]
+
+    # merge near-by car positions
+    merged_cars = []
+    for i in range(len(cars)):
+        merged = True
+        for j in range(i + 1, len(cars)):
+            if cars[i].overlap(cars[j].position) >= min_overlap:
+                merged = False
+                break
+        if merged:
+            merged_cars.append(cars[i])
+    cars = merged_cars
+
     # Draw the box on the image
     car_img = np.copy(img)
     for car in cars:
@@ -156,10 +173,20 @@ def bbox_area(bbox=((0, 0), (2, 6))):
     return dx * dy
 
 
+###########################################################################################
+# Classes
+###########################################################################################
+
+
 class CarPosition(object):
+    """
+    Represent a car in an entire video
+    """
+
     def __init__(self, bbox, max_smooth=10):
         self.bboxes = np.array([np.array(bbox).ravel()])
         self.max_smooth = max_smooth
+        self.misses = 0
 
     @property
     def position(self):
@@ -186,6 +213,7 @@ class CarPosition(object):
         """
         Update the car position with the new bbox
         """
+        self.misses = 0
         new_bbox = np.array(bbox).ravel()
         self.bboxes = np.vstack((self.bboxes, new_bbox))
         if len(self.bboxes) > self.max_smooth:
@@ -193,6 +221,10 @@ class CarPosition(object):
 
 
 class CarDetectionModel(object):
+    """
+    With models and parameters for the detection pipeline
+    """
+
     def __init__(self, model_file='car_model.pkl'):
         persisted_data = joblib.load(model_file)
         self.ppl = persisted_data['ppl']
@@ -204,6 +236,10 @@ class CarDetectionModel(object):
 
 
 class CarFeatureDetector(multiprocessing.Process):
+    """
+    Compute the features and run the prediction pipeline in a separated process
+    """
+
     def __init__(self, work_queue, output_queue):
         self.work_queue = work_queue
         self.output_queue = output_queue
@@ -289,7 +325,9 @@ class CarDetector(object):
 
 
 if __name__ == '__main__':
+    # fix for macOS
     multiprocessing.set_start_method('spawn', force=True)
+
     parser = argparse.ArgumentParser(description='Detecting cars')
     parser.add_argument('input', type=str, help='Path to the input video')
     parser.add_argument('--out', '-o', dest='output', type=str, default='', help='Path to the output video')
