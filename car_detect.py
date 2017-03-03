@@ -143,7 +143,8 @@ def filter_candidates(img, candidates, cars, heat_threshold=1, max_smooth=10, mi
                 cars.append(CarPosition(bbox, max_smooth=max_smooth))
 
     # remove cars that miss a frame
-    max_misses = 1
+    max_misses = 3
+    min_count = 3
     cars = [c for c in cars if c.misses < max_misses]
 
     # merge near-by car positions
@@ -161,8 +162,9 @@ def filter_candidates(img, candidates, cars, heat_threshold=1, max_smooth=10, mi
     # Draw the box on the image
     car_img = np.copy(img)
     for car in cars:
-        pos = car.position
-        cv2.rectangle(car_img, pos[0], pos[1], (0, 0, 255), 6)
+        if car.count >= min_count:
+            pos = car.position
+            cv2.rectangle(car_img, pos[0], pos[1], (0, 0, 255), 6)
 
     return cars, car_img, heat
 
@@ -198,8 +200,17 @@ class CarPosition(object):
         """
         Return the adjusted position of this car in the format ((x1, y1), (x2, y2))
         """
-        pos = [int(_) for _ in self.bboxes.mean(0)]
+        coefficients = np.array([x*x for x in range(len(self.bboxes), 0, -1)])
+        coefficients = coefficients / coefficients.sum()
+        pos = [int(_) for _ in np.dot(coefficients, self.bboxes)]
         return (pos[0], pos[1]), (pos[2], pos[3])
+
+    @property
+    def count(self):
+        """
+        Number of accumulated bboxes
+        """
+        return len(self.bboxes)
 
     def overlap(self, bbox):
         """
