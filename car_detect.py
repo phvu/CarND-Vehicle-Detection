@@ -9,6 +9,7 @@ from scipy.ndimage.measurements import label as scipy_label
 from sklearn.externals import joblib
 
 from car_detect_train import get_hog_features, bin_spatial, color_hist
+from lane_detect import LaneDetector
 
 
 def find_cars(img, ystart, ystop, scale, ppl, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins):
@@ -272,14 +273,18 @@ class CarFeatureDetector(multiprocessing.Process):
 
 
 class CarDetector(object):
-    def __init__(self, debug=False, workers=4):
+    """
+    The main workhorse for detecting car
+    """
+
+    def __init__(self, debug=False, workers=4, detect_lane=False):
         self.debug = debug
-        self.detection_model = CarDetectionModel()
+        self.detect_lane = detect_lane
 
         self.ystart = 400
         self.ystop = 656
-        self.scales = (0.8, 1, 1.25, 1.5, 1.7, 2)
-        self.heat_threshold = 5
+        self.scales = (0.8, 1, 1.25, 1.5, 1.7, 1.9, 2.1)
+        self.heat_threshold = 3
         self.cars = []
         self.max_smooth = 10
         self.min_overlap = 0.3
@@ -289,16 +294,6 @@ class CarDetector(object):
         self.output_queue = multiprocessing.Queue()
         self.detectors = [CarFeatureDetector(self.work_queue, self.output_queue) for _ in range(workers)]
         [d.start() for d in self.detectors]
-
-    def get_candidates_serial(self, img):
-        candidates = []
-        for scale in self.scales:
-            c, _ = find_cars(img, self.ystart, self.ystop, scale, self.detection_model.ppl,
-                             self.detection_model.orient, self.detection_model.pix_per_cell,
-                             self.detection_model.cell_per_block,
-                             self.detection_model.spatial_size, self.detection_model.hist_bins)
-            candidates.extend(c)
-        return candidates
 
     def get_candidates_parallel(self, img):
         for scale in self.scales:
@@ -320,13 +315,19 @@ class CarDetector(object):
         return car_img, heat_img
 
     def detect_video(self, inp_file, out_file):
+        lane_detector = LaneDetector()
 
         def detect_func(frame):
             car_img, heat_img = self.detect(frame)
+
+            if self.detect_lane:
+                car_img = lane_detector.process_image(frame, car_img)
+
             if self.debug:
                 heat_img = (heat_img - heat_img.min()) / (heat_img.max() - heat_img.min())
                 heat_img = (heat_img * 255).astype(np.uint8)
                 return np.hstack((car_img, np.dstack((heat_img, np.zeros_like(heat_img), np.zeros_like(heat_img)))))
+
             return car_img
 
         out_clip = VideoFileClip(inp_file).fl_image(detect_func)
@@ -349,10 +350,11 @@ if __name__ == '__main__':
     parser.add_argument('--out', '-o', dest='output', type=str, default='', help='Path to the output video')
     parser.add_argument('--debug', '-d', dest='debug', action='store_true')
     parser.add_argument('--process', '-p', dest='process', type=int, default=4, help='Number of worker processes')
+    parser.add_argument('--lane', '-l', dest='lane', action='store_true')
 
     args = parser.parse_args()
+    detector = CarDetector(debug=args.debug, workers=args.process, detect_lane=args.lane)
 
-    detector = CarDetector(debug=args.debug, workers=args.process)
     if args.output == '':
         args.output = '{}_detected{}'.format(*os.path.splitext(args.input))
     detector.detect_video(args.input, args.output)
