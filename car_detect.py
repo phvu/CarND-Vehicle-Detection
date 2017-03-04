@@ -202,7 +202,7 @@ class CarPosition(object):
         """
         Return the adjusted position of this car in the format ((x1, y1), (x2, y2))
         """
-        coefficients = np.array([x*x for x in range(len(self.bboxes), 0, -1)])
+        coefficients = np.array([x for x in range(len(self.bboxes), 0, -1)])
         coefficients = coefficients / coefficients.sum()
         pos = [int(_) for _ in np.dot(coefficients, self.bboxes)]
         return (pos[0], pos[1]), (pos[2], pos[3])
@@ -284,7 +284,7 @@ class CarDetector(object):
 
         self.ystart = 400
         self.ystop = 656
-        self.scales = (0.7, 0.8, 1, 1.25, 1.5, 1.7)
+        self.scales = (0.7, 0.8, 1, 1.25, 1.5, 1.7, 2.9, 2)
         self.heat_threshold = 4
         self.cars = []
         self.max_smooth = 10
