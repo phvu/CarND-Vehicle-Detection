@@ -115,13 +115,14 @@ def filter_candidates(img, candidates, cars, heat_threshold=1, max_smooth=10, mi
         heat[box[0][1]:box[1][1], box[0][0]:box[1][0]] += 1
 
     # Apply threshold to help remove false positives
-    heat[heat <= heat_threshold] = 0
+    clipped_heat_map = np.copy(heat)
+    clipped_heat_map[clipped_heat_map <= heat_threshold] = 0
 
     # Visualize the heatmap
-    heat = np.clip(heat, 0, 255)
+    heat_map = np.clip(clipped_heat_map, 0, 255)
 
     # Find final boxes from heatmap using label function
-    labels = scipy_label(heat)
+    labels = scipy_label(heat_map)
     bboxes = get_labeled_bboxes(labels)
 
     # miss by default
@@ -283,11 +284,11 @@ class CarDetector(object):
 
         self.ystart = 400
         self.ystop = 656
-        self.scales = (0.8, 1, 1.25, 1.5, 1.7, 1.9, 2.1)
-        self.heat_threshold = 3
+        self.scales = (0.7, 0.8, 1, 1.25, 1.5, 1.7, 1.9, 2.1)
+        self.heat_threshold = 4
         self.cars = []
         self.max_smooth = 10
-        self.min_overlap = 0.3
+        self.min_overlap = 0.7
         self.min_area = 1000
 
         self.work_queue = multiprocessing.Queue()
