@@ -284,7 +284,7 @@ class CarDetector(object):
 
         self.ystart = 400
         self.ystop = 656
-        self.scales = (0.7, 0.8, 1, 1.25, 1.5, 1.7, 1.9, 2.1)
+        self.scales = (0.7, 0.8, 1, 1.25, 1.5, 1.7)
         self.heat_threshold = 4
         self.cars = []
         self.max_smooth = 10
