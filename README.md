@@ -41,9 +41,24 @@ Here is an example using the `YCrCb` color space and HOG parameters of `orientat
 
 ![alt text][image2]
 
+I tried different combinations of features, here are the summary:
+
+|          Features         | Feature vector size | Test set accuracy |
+|:-------------------------:|:-------------------:|:-----------------:|
+| HOG                       | 5292                | 97.89%            |
+| HoG + Spatial             | 6060                | 98.93%            |
+| HoG + Spatial + Histogram | 6156                | 99.35%            |
+
+For HoG, I used `orientations=9`, `pixels_per_cell=(8, 8)` and `cells_per_block=(2, 2)`. Since the final combination
+gives accuracy of 99.35%, I used this configuration for the rest of my experiments.
+
 ####2. Explain how you settled on your final choice of HOG parameters.
 
-I didn't tune HoG parameters a lot. I settled on `orientation=9, pix_per_cell=8, cell_per_block=2` throughout the most of my experiments.
+As shown in the above table, `orientation=9, pix_per_cell=8, cell_per_block=2` for HoG, along with spatial and histogram
+features give pretty promising results on the test set, so I settled with this setting. 
+
+Moreover, I could have tuned those parameters to make the feature vector smaller, and therefore reduce the computation time,
+but this configuration is not too slow, so I moved on with it.
 
 ####3. Describe how (and identify where in your code) you trained a classifier using your selected HOG features (and color features if you used them).
 
@@ -54,7 +69,7 @@ I use scikit-learn `Pipeline` to build a pipeline containing a `StandardScaler` 
 in between lines 90 and 98 of `car_detect_train.py`. Using a `Pipeline` allows me to persist the whole model 
 once training is done, along with all the parameters. The code for that is between lines 100-106 of `car_detect_train.py`.
 
-On the provided dataset, SVM gave 99.6% accuracy, so I thought I don't need to tune it more.
+On the provided dataset, SVM gave 99.4% accuracy, so I thought I don't need to tune it more.
 
 ###Sliding Window Search
 
@@ -72,7 +87,7 @@ The code for multiprocessing is in lines 256-273, 299-307 of `car_detect.py`.
 
 ####2. Show some examples of test images to demonstrate how your pipeline is working.  What did you do to optimize the performance of your classifier?
 
-Ultimately I searched on two scales using YCrCb 3-channel HOG features plus spatially binned color and histograms of color in the feature vector, which provided a nice result.  Here are some example images:
+Here are some example images:
 
 ![alt text][image3]
 ---
@@ -89,7 +104,7 @@ Video was generated with `python car_detect.py project_video.mp4 -d -l -p 10`.
 
 ####2. Describe how (and identify where in your code) you implemented some kind of filter for false positives and some method for combining overlapping bounding boxes.
 
-False positives are eliminated by several ways:
+False positives are eliminated in several ways:
 
 - Any detected window of size less than 1000 pixels will be discarded. This roughly corresponds to image patches of size 
 32 x 32, which is quite small. The code is in lines 134-135 and 292 of `car_detect.py`.
